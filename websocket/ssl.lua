@@ -72,29 +72,6 @@ ffi.cdef[[
 
  int SSL_get_error(const SSL *s, int ret_code);
 
- long SSL_CTX_set_options(SSL_CTX *ctx, long options);
- long SSL_CTX_clear_options(SSL_CTX *ctx, long options);
- long SSL_CTX_get_options(SSL_CTX *ctx);
- long SSL_set_options(SSL *ssl, long options);
-
- typedef struct ssl_conf_ctx_st SSL_CONF_CTX;
- SSL_CONF_CTX *SSL_CONF_CTX_new(void);
- int SSL_CONF_CTX_finish(SSL_CONF_CTX *cctx);
- void SSL_CONF_CTX_free(SSL_CONF_CTX *cctx);
- unsigned int SSL_CONF_CTX_set_flags(SSL_CONF_CTX *cctx, unsigned int flags);
- unsigned int SSL_CONF_CTX_clear_flags(SSL_CONF_CTX *cctx, unsigned int flags);
- int SSL_CONF_CTX_set1_prefix(SSL_CONF_CTX *cctx, const char *pre);
-
- void SSL_CONF_CTX_set_ssl(SSL_CONF_CTX *cctx, SSL *ssl);
- void SSL_CONF_CTX_set_ssl_ctx(SSL_CONF_CTX *cctx, SSL_CTX *ctx);
- long SSL_CTX_ctrl(SSL_CTX *ctx, int cmd, long larg, void *parg);
-
- int SSL_CONF_cmd(SSL_CONF_CTX *cctx, const char *cmd, const char *value);
-
- long SSL_ctrl(SSL *ssl, int cmd, long larg, void *parg);
-
-int SSL_CTX_set_ciphersuites(SSL_CTX *ctx, const char *str);
-
  typedef socklen_t uint32;
  int getsockopt(int sockfd, int level, int optname, void *optval,
                 socklen_t *optlen);
@@ -106,7 +83,7 @@ int SSL_CTX_set_ciphersuites(SSL_CTX *ctx, const char *str);
         const void *needle, size_t needlelen);
 ]]
 
-local rc, res = pcall(
+pcall(
     function()
         ffi.cdef([[
           int SSL_library_init(void);
@@ -125,13 +102,9 @@ local rc, res = pcall(
         ffi.C.SSL_library_init()
         ffi.C.SSL_load_error_strings()
 end)
-if not rc then
-   log.debug("SSL: %s", res)
-end
 
 
 local methods = {
-    tls = ffi.C.TLS_method(),
     tlsv1 = ffi.C.TLSv1_method(),
     tlsv11 = ffi.C.TLSv1_1_method(),
     tlsv12 = ffi.C.TLSv1_2_method(),
@@ -151,9 +124,7 @@ local X509_FILETYPE_ASN1      = 2
 local X509_FILETYPE_DEFAULT   = 3
 
 local function ctx(method)
-    if method == nil then
-      method = methods['tls']
-    end
+    method = method or methods['tlsv1']
 
     ffi.C.ERR_clear_error()
     local newctx =
@@ -176,7 +147,7 @@ local function ctx_use_certificate_file(ctx, pem_file)
     return true
 end
 
-local default_ctx = ctx()
+local default_ctx = ctx(methods.sslv23)
 
 local SSL_ERROR_NONE                  = 0
 local SSL_ERROR_SSL                   = 1
@@ -477,9 +448,7 @@ function sslsocket.read(self, opts, timeout)
 end
 
 local function tcp_connect(host, port, timeout, sslctx)
-    if sslctx == nil then
-        sslctx = default_ctx
-    end
+    sslctx = sslctx or default_ctx
 
     ffi.C.ERR_clear_error()
     local ssl = ffi.gc(ffi.C.SSL_new(sslctx),
